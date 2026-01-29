@@ -53,8 +53,7 @@ class boolmap_frontier_t {
   __host__ __device__ __forceinline__ std::size_t get_number_of_elements(
       gcuda::stream_t stream = 0) {
     // Compute number of elements using a reduction.
-#ifdef __HIP_DEVICE_COMPILE__
-    // #ifdef __CUDA_ARCH__
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__CUDA_ARCH__)
     num_elements = thrust::reduce(thrust::seq, this->begin(), this->end(), 0);
 #else
 #if HIP_BACKEND == 1

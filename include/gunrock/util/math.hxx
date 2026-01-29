@@ -76,11 +76,10 @@ namespace atomic {
 
 template <typename type_t>
 __host__ __device__ __forceinline__ type_t add(type_t* address, type_t value) {
-#if __HIP_DEVICE_COMPILE__
-  // #ifdef __CUDA_ARCH__
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__CUDA_ARCH__)
   return atomicAdd(address, value);
 #else
-  // use std::atomic::fetch_add();
+  // Host fallback (use std::atomic in production code)
   auto old_value = *address;
   *address += value;
   return old_value;
@@ -89,21 +88,25 @@ __host__ __device__ __forceinline__ type_t add(type_t* address, type_t value) {
 
 template <typename type_t>
 __host__ __device__ __forceinline__ type_t min(type_t* address, type_t value) {
-#if __HIP_DEVICE_COMPILE__
-  // #ifdef __CUDA_ARCH__
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__CUDA_ARCH__)
   return gcuda::atomicMin(address, value);
 #else
-  return std::min<type_t>(*address, value);  // use std::atomic;
+  // Host fallback (not truly atomic, use std::atomic in production)
+  auto old_value = *address;
+  *address = std::min<type_t>(*address, value);
+  return old_value;
 #endif
 }
 
 template <typename type_t>
 __host__ __device__ __forceinline__ type_t max(type_t* address, type_t value) {
-#if __HIP_DEVICE_COMPILE__
-  // #ifdef __CUDA_ARCH__
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__CUDA_ARCH__)
   return gcuda::atomicMax(address, value);
 #else
-  return std::max<type_t>(*address, value);  // use std::atomic;
+  // Host fallback (not truly atomic, use std::atomic in production)
+  auto old_value = *address;
+  *address = std::max<type_t>(*address, value);
+  return old_value;
 #endif
 }
 
@@ -111,24 +114,24 @@ template <typename type_t>
 __host__ __device__ __forceinline__ type_t cas(type_t* address,
                                                type_t compare,
                                                type_t value) {
-#if __HIP_DEVICE_COMPILE__
-  // #ifdef __CUDA_ARCH__
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__CUDA_ARCH__)
   return atomicCAS(address, compare, value);
 #else
+  // Host fallback (not truly atomic, use std::atomic in production)
   type_t old = *address;
-  *address = (old == compare) ? value : old;  // use std::atomic;
+  *address = (old == compare) ? value : old;
   return old;
 #endif
 }
 
 template <typename type_t>
 __host__ __device__ __forceinline__ type_t exch(type_t* address, type_t value) {
-#if __HIP_DEVICE_COMPILE__
-  // #ifdef __CUDA_ARCH__
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__CUDA_ARCH__)
   return atomicExch(address, value);
 #else
+  // Host fallback (not truly atomic, use std::atomic in production)
   type_t old = *address;
-  *address = value;  // use std::atomic;
+  *address = value;
   return old;
 #endif
 }

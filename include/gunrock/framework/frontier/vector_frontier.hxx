@@ -70,10 +70,11 @@ class vector_frontier_t {
    * @param rhs vector_frontier_t object
    */
   __device__ __host__ vector_frontier_t(const vector_frontier_t& rhs) {
-#ifdef __HIP_DEVICE_COMPILE__
-    // #ifdef __CUDA_ARCH__
+#if defined(__HIP_DEVICE_COMPILE__) || defined(__CUDA_ARCH__)
+    // Device code: just copy raw_ptr (shared_ptr not accessible on device)
     raw_ptr = rhs.raw_ptr;
 #else
+    // Host code: copy shared_ptr and get current data pointer
     p_storage = rhs.p_storage;
     raw_ptr = rhs.p_storage.get()->data().get();
 #endif
