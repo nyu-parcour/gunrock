@@ -27,6 +27,9 @@ endfunction()
 
 # begin /* Add algorithms' subdirectories */
 add_subdirectory(sssp)
+
+add_subdirectory(forman_ricci)
+
 add_subdirectory(bfs)
 add_subdirectory(pr)
 add_subdirectory(bc)
