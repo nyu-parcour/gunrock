@@ -54,55 +54,107 @@ option(ESSENTIALS_BUILD_EXAMPLES
 
 option(ESSENTIALS_AMD_BACKEND
   "If on, builds essentials with __HIP_PLATFORM_AMD__ set."
-  ON)
+  OFF)
 
 option(ESSENTIALS_NVIDIA_BACKEND
   "If on, builds essentials with CUDA backend for NVIDIA GPUs."
+  OFF)
+
+option(ESSENTIALS_METAL_BACKEND
+  "If on, builds essentials with Apple Metal backend for macOS GPUs."
   OFF)
 
 option(ESSENTIALS_FETCH_ROCM_LIBS
   "If on, fetches rocPRIM/rocThrust/hipCUB via sparse-checkout instead of using system packages."
   OFF)
 
-if((${ESSENTIALS_AMD_BACKEND} AND ${ESSENTIALS_NVIDIA_BACKEND}))
-  message(FATAL_ERROR "Both NVIDIA and AMD backends specified [ON], select one: -DESSENTIALS_AMD_BACKEND=ON or -DESSENTIALS_NVIDIA_BACKEND=ON.")
-endif()
+####################################################
+############### BACKEND VALIDATION #################
+####################################################
 
-if(NOT(${ESSENTIALS_AMD_BACKEND}) AND NOT(${ESSENTIALS_NVIDIA_BACKEND}))
-  message(FATAL_ERROR "Both NVIDIA and AMD backends specified [OFF], select one: -DESSENTIALS_AMD_BACKEND=ON or -DESSENTIALS_NVIDIA_BACKEND=ON.")
+set(_backend_count 0)
+if(${ESSENTIALS_AMD_BACKEND})
+  math(EXPR _backend_count "${_backend_count} + 1")
 endif()
-
 if(${ESSENTIALS_NVIDIA_BACKEND})
+  math(EXPR _backend_count "${_backend_count} + 1")
+endif()
+if(${ESSENTIALS_METAL_BACKEND})
+  math(EXPR _backend_count "${_backend_count} + 1")
+endif()
+
+if(_backend_count EQUAL 0)
+  message(FATAL_ERROR "No backend specified. Select exactly one:\n"
+    "  -DESSENTIALS_NVIDIA_BACKEND=ON\n"
+    "  -DESSENTIALS_AMD_BACKEND=ON\n"
+    "  -DESSENTIALS_METAL_BACKEND=ON")
+endif()
+if(_backend_count GREATER 1)
+  message(FATAL_ERROR "Multiple backends specified. Select exactly one:\n"
+    "  -DESSENTIALS_NVIDIA_BACKEND=ON\n"
+    "  -DESSENTIALS_AMD_BACKEND=ON\n"
+    "  -DESSENTIALS_METAL_BACKEND=ON")
+endif()
+
+if(${ESSENTIALS_METAL_BACKEND} AND NOT APPLE)
+  message(FATAL_ERROR "Metal backend requires macOS (Apple platform).")
+endif()
+
+####################################################
+############### BUILD/TEST OPTIONS #################
+####################################################
+
+if(${ESSENTIALS_NVIDIA_BACKEND} OR ${ESSENTIALS_METAL_BACKEND})
   option(ESSENTIALS_BUILD_TESTS
     "If on, builds the unit tests."
     ON)
+else()
+  option(ESSENTIALS_BUILD_TESTS
+    "If on, builds the unit tests."
+    OFF)
+endif()
+
+if(${ESSENTIALS_NVIDIA_BACKEND})
   option(ESSENTIALS_BUILD_BENCHMARKS
     "If on, builds essentials with benchmarking support."
     OFF)
 else()
-  # Benchmarking and testing not supported w/ AMD.
-  option(ESSENTIALS_BUILD_TESTS
-    "If on, builds the unit tests."
-    OFF)
   option(ESSENTIALS_BUILD_BENCHMARKS
     "If on, builds essentials with benchmarking support."
     OFF)
 endif()
+
+####################################################
+############# PROJECT LANGUAGE SETUP ###############
+####################################################
 
 if(${ESSENTIALS_NVIDIA_BACKEND})
   message(STATUS "Essentials building with NVIDIA backend.")
   set(TARGET_LANGUAGE CUDA)
+  project(essentials
+    VERSION ${ESSENTIALS_VERSION}
+    LANGUAGES CXX C ${TARGET_LANGUAGE}
+    DESCRIPTION "Programmable CUDA/C++ GPU Graph Analytics"
+    HOMEPAGE_URL "https://github.com/gunrock/gunrock"
+  )
+elseif(${ESSENTIALS_METAL_BACKEND})
+  message(STATUS "Essentials building with Metal backend.")
+  project(essentials
+    VERSION ${ESSENTIALS_VERSION}
+    LANGUAGES CXX C OBJCXX
+    DESCRIPTION "Programmable GPU Graph Analytics"
+    HOMEPAGE_URL "https://github.com/gunrock/gunrock"
+  )
 else()
   message(STATUS "Essentials building with AMD backend.")
   set(TARGET_LANGUAGE HIP)
+  project(essentials
+    VERSION ${ESSENTIALS_VERSION}
+    LANGUAGES CXX C ${TARGET_LANGUAGE}
+    DESCRIPTION "Programmable CUDA/C++ GPU Graph Analytics"
+    HOMEPAGE_URL "https://github.com/gunrock/gunrock"
+  )
 endif()
-
-project(essentials
-  VERSION ${ESSENTIALS_VERSION}
-  LANGUAGES CXX C ${TARGET_LANGUAGE}
-  DESCRIPTION "Programmable CUDA/C++ GPU Graph Analytics"
-  HOMEPAGE_URL "https://github.com/gunrock/gunrock"
-)
 
 ####################################################
 ############### SET SM ARCHITECTURE ################
@@ -120,7 +172,7 @@ if(${ESSENTIALS_NVIDIA_BACKEND})
   else()
     message(STATUS "GPU Architecture (-DCMAKE_CUDA_ARCHITECTURES): ${CMAKE_CUDA_ARCHITECTURES}")
   endif()
-else()
+elseif(${ESSENTIALS_AMD_BACKEND})
   if(NOT CMAKE_HIP_ARCHITECTURES)
     set(CMAKE_HIP_ARCHITECTURES gfx90a)
     message(STATUS "Using default GPU Architecture: ${CMAKE_HIP_ARCHITECTURES}")
@@ -130,6 +182,8 @@ else()
   set(AMDGPU_TARGETS ${CMAKE_HIP_ARCHITECTURES})
   set(DEFAULT_AMDGPU_TARGETS AMDGPU_TARGETS)
   message(STATUS "AMDGPU_TARGETS: ${AMDGPU_TARGETS}")
+elseif(${ESSENTIALS_METAL_BACKEND})
+  message(STATUS "Metal backend: architecture determined at runtime by Apple GPU.")
 endif()
 
 # begin /* Dependencies directory */
@@ -140,12 +194,16 @@ set(PROJECT_DEPS_DIR externals)
 if(${ESSENTIALS_AMD_BACKEND})
   include(${PROJECT_SOURCE_DIR}/cmake/FetchROCMHIP.cmake)
   include(${PROJECT_SOURCE_DIR}/cmake/FetchROCmLibs.cmake)
-else()
+elseif(${ESSENTIALS_NVIDIA_BACKEND})
   include(${PROJECT_SOURCE_DIR}/cmake/FetchCCCL.cmake)
+elseif(${ESSENTIALS_METAL_BACKEND})
+  include(${PROJECT_SOURCE_DIR}/cmake/FetchMetalCpp.cmake)
 endif()
 
-include(${PROJECT_SOURCE_DIR}/cmake/FetchCXXOpts.cmake)
-include(${PROJECT_SOURCE_DIR}/cmake/FetchNlohmannJson.cmake)
+if(NOT ${ESSENTIALS_METAL_BACKEND})
+  include(${PROJECT_SOURCE_DIR}/cmake/FetchCXXOpts.cmake)
+  include(${PROJECT_SOURCE_DIR}/cmake/FetchNlohmannJson.cmake)
+endif()
 include(${PROJECT_SOURCE_DIR}/cmake/FetchCMakeModules.cmake)
 include(${PROJECT_SOURCE_DIR}/cmake/FetchThreads.cmake)
 # end /* Include cmake modules */
@@ -185,6 +243,13 @@ if(${ESSENTIALS_NVIDIA_BACKEND})
       CUDA_SEPARABLE_COMPILATION ON
       CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES} # Set required architecture.
   )
+elseif(${ESSENTIALS_METAL_BACKEND})
+  set_target_properties(essentials
+    PROPERTIES
+      CXX_STANDARD 17
+      CXX_STANDARD_REQUIRED ON
+      CXX_EXTENSIONS OFF
+  )
 else()
   set_target_properties(essentials 
     PROPERTIES
@@ -212,6 +277,12 @@ if(${ESSENTIALS_NVIDIA_BACKEND})
       ESSENTIALS_BACKEND="NVIDIA"
       __HIP_PLATFORM_NVIDIA__
       HIP_BACKEND=1
+  )
+elseif(${ESSENTIALS_METAL_BACKEND})
+  target_compile_definitions(essentials
+    INTERFACE
+      ESSENTIALS_BACKEND="METAL"
+      ESSENTIALS_METAL_BACKEND=1
   )
 else()
   # For AMD, keep SM_TARGET as architecture identifier (e.g., gfx942)
@@ -246,19 +317,27 @@ set(ESSENTIALS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 ####################################################
 target_include_directories(essentials
   INTERFACE ${ESSENTIALS_INCLUDE_DIR}
-  INTERFACE ${ESSENTIALS_INCLUDE_DIR}/gunrock/compat
-  INTERFACE ${CXXOPTS_INCLUDE_DIR}
-  INTERFACE ${NHLOMANN_JSON_INCLUDE_DIR}
-  INTERFACE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
   INTERFACE ${CMAKE_MODULES_INCLUDE_DIR}
 )
 
-if(${ESSENTIALS_NVIDIA_BACKEND})
+if(${ESSENTIALS_METAL_BACKEND})
   target_include_directories(essentials
+    INTERFACE ${METAL_CPP_INCLUDE_DIR}
+  )
+elseif(${ESSENTIALS_NVIDIA_BACKEND})
+  target_include_directories(essentials
+    INTERFACE ${ESSENTIALS_INCLUDE_DIR}/gunrock/compat
+    INTERFACE ${CXXOPTS_INCLUDE_DIR}
+    INTERFACE ${NHLOMANN_JSON_INCLUDE_DIR}
+    INTERFACE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
     INTERFACE ${CCCL_INCLUDE_DIR}
   )
 else()
   target_include_directories(essentials
+    INTERFACE ${ESSENTIALS_INCLUDE_DIR}/gunrock/compat
+    INTERFACE ${CXXOPTS_INCLUDE_DIR}
+    INTERFACE ${NHLOMANN_JSON_INCLUDE_DIR}
+    INTERFACE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
     INTERFACE ${THRUST_INCLUDE_DIR}
     INTERFACE ${HIPCUB_INCLUDE_DIR}
     INTERFACE ${CUB_INCLUDE_DIR}
@@ -278,7 +357,21 @@ endif()
 ############ TARGET LINK LIBRARIES #################
 ####################################################
 
-if(${ESSENTIALS_NVIDIA_BACKEND})
+if(${ESSENTIALS_METAL_BACKEND})
+  find_library(METAL_FRAMEWORK Metal REQUIRED)
+  find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+  find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
+  message(STATUS "Metal framework: ${METAL_FRAMEWORK}")
+  message(STATUS "Foundation framework: ${FOUNDATION_FRAMEWORK}")
+  message(STATUS "QuartzCore framework: ${QUARTZCORE_FRAMEWORK}")
+
+  target_link_libraries(essentials
+    INTERFACE ${METAL_FRAMEWORK}
+    INTERFACE ${FOUNDATION_FRAMEWORK}
+    INTERFACE ${QUARTZCORE_FRAMEWORK}
+    INTERFACE ${CMAKE_THREAD_LIBS_INIT}
+  )
+elseif(${ESSENTIALS_NVIDIA_BACKEND})
   target_link_libraries(essentials
     INTERFACE curand
     INTERFACE cuda
@@ -310,9 +403,11 @@ endif()
 ####################################################
 ################# TARGET SOURCES ###################
 ####################################################
-target_sources(essentials
-  INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include/gunrock/util/gitsha1make.c"
-)
+if(NOT ${ESSENTIALS_METAL_BACKEND})
+  target_sources(essentials
+    INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include/gunrock/util/gitsha1make.c"
+  )
+endif()
 
 ####################################################
 ############## SET CXX & CUDA FLAGS ################
@@ -334,7 +429,13 @@ set(CXX_FLAGS
     # -Werror
     # -vvv
   >
-  $<$<CXX_COMPILER_ID:CLANG>:
+  $<$<CXX_COMPILER_ID:AppleClang>:
+    -Wall
+    -Wno-unused-result
+    -Wno-deprecated-builtins
+    -Wno-ignored-attributes
+  >
+  $<$<CXX_COMPILER_ID:Clang>:
     -Wno-unused-result
     -Wno-deprecated-builtins
     -Wno-ignored-attributes
@@ -342,103 +443,83 @@ set(CXX_FLAGS
   >
 )
 
-set(CUDA_RELEASE_FLAGS
-  --expt-extended-lambda 
-  --expt-relaxed-constexpr
-  --use_fast_math
-  # Suppress common benign CUDA warnings
-  --diag-suppress=177
-  --diag-suppress=550
-  --diag-suppress=20014
-  $<$<CXX_COMPILER_ID:MSVC>:
-    -Xcompiler=/bigobj
-    -Xcompiler=/Zc:__cplusplus
-    -Xcompiler=/wd4244
-  >
-)
+if(NOT ${ESSENTIALS_METAL_BACKEND})
+  set(CUDA_RELEASE_FLAGS
+    --expt-extended-lambda 
+    --expt-relaxed-constexpr
+    --use_fast_math
+    # Suppress common benign CUDA warnings
+    --diag-suppress=177
+    --diag-suppress=550
+    --diag-suppress=20014
+    $<$<CXX_COMPILER_ID:MSVC>:
+      -Xcompiler=/bigobj
+      -Xcompiler=/Zc:__cplusplus
+      -Xcompiler=/wd4244
+    >
+  )
 
-set(CUDA_DEBUG_FLAGS
-  --expt-extended-lambda 
-  --expt-relaxed-constexpr
-  --ptxas-options -v
-  --debug # Host debug
-  --device-debug # Device debug
-  $<$<CXX_COMPILER_ID:MSVC>:
-    -Xcompiler=/bigobj
-    -Xcompiler=/Zc:__cplusplus
-    -Xcompiler=/wd4244
-  >
-)
+  set(CUDA_DEBUG_FLAGS
+    --expt-extended-lambda 
+    --expt-relaxed-constexpr
+    --ptxas-options -v
+    --debug # Host debug
+    --device-debug # Device debug
+    $<$<CXX_COMPILER_ID:MSVC>:
+      -Xcompiler=/bigobj
+      -Xcompiler=/Zc:__cplusplus
+      -Xcompiler=/wd4244
+    >
+  )
 
-set(HIP_FLAGS
-  # -fgpu-sanitize          # Enable sanitizer for AMDGPU target
-  # -mamdgpu-ieee           # Sets the IEEE bit in the expected default floating point  mode register. 
-                            # Floating point opcodes that support exception flag gathering quiet and 
-                            # propagate signaling NaN inputs per IEEE 754-2008. 
-                            # This option changes the ABI. (AMDGPU only)
-  # -mcode-object-v3        # Legacy option to specify code object ABI V3 (AMDGPU only)
-                            # Specify code object ABI version. 
-                            # Allowed values are 2, 3, 4, and 5. Defaults to 4. (AMDGPU only)
-  # -mcumode                # Specify CU wavefront execution mode (AMDGPU only)
-  # -mno-code-object-v3     # Legacy option to specify code object ABI V2 (AMDGPU only)
-  # -mno-cumode             # Specify WGP wavefront execution mode (AMDGPU only)
-  # -mno-sram-ecc           # Legacy option to specify SRAM ECC mode (AMDGPU only)
-  # -mno-tgsplit            # Disable threadgroup split execution mode (AMDGPU only)
-  # -mno-wavefrontsize64      # Specify wavefront size 32 mode (AMDGPU only)
-  # -msram-ecc              # Legacy option to specify SRAM ECC mode (AMDGPU only)
-  # -mtgsplit               # Enable threadgroup split execution mode (AMDGPU only)
-  -munsafe-fp-atomics       # Enable unsafe floating point atomic instructions (AMDGPU only)
-  # -mwavefrontsize64       # Specify wavefront size 64 mode (AMDGPU only)
-  # -mxnack                 # Legacy option to specify XNACK mode (AMDGPU only)
-  
-  # Undefine architecture macros that CMake adds automatically, which conflict with rocPRIM enums.
-  # CMake's HIP module defines -Dgfx942, -Dgfx90a, etc. based on CMAKE_HIP_ARCHITECTURES,
-  # but rocPRIM uses these as enum values (target_arch::gfx942) which causes compile errors.
-  -Ugfx942
-  -Ugfx950
-  -Ugfx90a
-  -Ugfx908
-  -Ugfx906
-  -Ugfx1030
-  -Ugfx1100
-  
-  # Suppress warnings.
-  -Wno-unused-result
-  -Wno-deprecated-builtins
-  -Wno-ignored-attributes
-  "-Wno-\#pragma-messages"
-)
+  set(HIP_FLAGS
+    -munsafe-fp-atomics
+    -Ugfx942
+    -Ugfx950
+    -Ugfx90a
+    -Ugfx908
+    -Ugfx906
+    -Ugfx1030
+    -Ugfx1100
+    -Wno-unused-result
+    -Wno-deprecated-builtins
+    -Wno-ignored-attributes
+    "-Wno-\#pragma-messages"
+  )
 
-# Add libcudacxx and HIP include paths for AMD backend
-if(${ESSENTIALS_AMD_BACKEND})
-  # Add HIP include paths for CUDA compatibility
-  if(DEFINED ROCM_PATH)
-    if(EXISTS "${ROCM_PATH}/include/hip")
-      list(APPEND HIP_FLAGS "-I${ROCM_PATH}/include/hip")
-    endif()
-    if(EXISTS "${ROCM_PATH}/hip/include")
-      list(APPEND HIP_FLAGS "-I${ROCM_PATH}/hip/include")
+  # Add libcudacxx and HIP include paths for AMD backend
+  if(${ESSENTIALS_AMD_BACKEND})
+    if(DEFINED ROCM_PATH)
+      if(EXISTS "${ROCM_PATH}/include/hip")
+        list(APPEND HIP_FLAGS "-I${ROCM_PATH}/include/hip")
+      endif()
+      if(EXISTS "${ROCM_PATH}/hip/include")
+        list(APPEND HIP_FLAGS "-I${ROCM_PATH}/hip/include")
+      endif()
     endif()
   endif()
+
+  set(HIP_RELEASE_FLAGS
+    ${HIP_FLAGS}
+    -O3
+  )
+
+  set(HIP_DEBUG_FLAGS
+    ${HIP_FLAGS}
+    -O0
+    -ggdb
+  )
 endif()
-
-set(HIP_RELEASE_FLAGS
-  ${HIP_FLAGS}
-  -O3
-)
-
-set(HIP_DEBUG_FLAGS
-  ${HIP_FLAGS}
-  -O0
-  -ggdb
-)
 
 ####################################################
 ############ TARGET COMPILE OPTIONS ################
 ####################################################
 
-
-if(${ESSENTIALS_NVIDIA_BACKEND})
+if(${ESSENTIALS_METAL_BACKEND})
+  target_compile_options(essentials INTERFACE
+    $<$<COMPILE_LANGUAGE:CXX>:${CXX_FLAGS}>
+  )
+elseif(${ESSENTIALS_NVIDIA_BACKEND})
   target_compile_options(essentials INTERFACE 
     $<$<AND:$<COMPILE_LANGUAGE:CXX>>:${CXX_FLAGS}>
     $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:DEBUG>>:${CUDA_DEBUG_FLAGS}>
@@ -472,9 +553,9 @@ endif(ESSENTIALS_COLLECT_METRICS)
 ####################################################
 
 # Subdirectories for examples, testing and documentation
-if(ESSENTIALS_BUILD_EXAMPLES)
+if(ESSENTIALS_BUILD_EXAMPLES AND NOT ${ESSENTIALS_METAL_BACKEND})
   add_subdirectory(examples)
-endif(ESSENTIALS_BUILD_EXAMPLES)
+endif()
 
 ####################################################
 ################ BUILD UNIT TESTS  #################
