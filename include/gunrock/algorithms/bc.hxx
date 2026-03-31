@@ -136,7 +136,16 @@ struct enactor_t : gunrock::enactor_t<problem_t> {
         return old_label == -1;
       };
 
+      auto remove_invalids =
+          [] __host__ __device__(vertex_t const& vertex) -> bool {
+        return vertex >= 0;
+      };
+
       while (true) {
+        // Grow frontier buffer if BFS depth exceeds current capacity.
+        if (this->depth + 2 > this->frontiers.size())
+          this->frontiers.resize(this->depth + 2);
+
         auto in_frontier = &(this->frontiers[this->depth]);
         auto out_frontier = &(this->frontiers[this->depth + 1]);
 
@@ -146,6 +155,10 @@ struct enactor_t : gunrock::enactor_t<problem_t> {
                                     operators::advance_io_type_t::vertices>(
             G, forward_op, in_frontier, out_frontier, E->scanned_work_domain,
             context);
+
+        // Remove invalid (-1) entries from the output frontier.
+        operators::filter::execute<operators::filter_algorithm_t::predicated>(
+            G, remove_invalids, out_frontier, out_frontier, context);
 
         this->depth++;
         this->search_depth++;
@@ -168,6 +181,8 @@ struct enactor_t : gunrock::enactor_t<problem_t> {
           return false;
 
         auto update = sigmas[src] / sigmas[dst] * (1 + deltas[dst]);
+        if (!isfinite(update))
+          return false;
         math::atomic::add(deltas + src, update);
         math::atomic::add(bc_values + src, 0.5f * update);  // scaled output
 
